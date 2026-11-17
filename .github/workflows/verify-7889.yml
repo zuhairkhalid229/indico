@@ -1,0 +1,21 @@
+name: verify-7889 (fork only)
+on:
+  push:
+    branches: [ 'ci/**' ]
+permissions:
+  contents: read
+jobs:
+  stylelint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: package*.json
+      - run: npm ci
+      - name: stylelint on the changed files
+        run: npx stylelint --formatter unix indico/web/client/styles/editor-output.scss indico/web/client/styles/modules/event_display/_meetings.scss && echo "stylelint: changed files clean"
+      - name: stylelint on all files (as CI does on push)
+        run: npx stylelint --formatter unix 'indico/**/*.{scss,css}' && echo "stylelint: all files clean"
