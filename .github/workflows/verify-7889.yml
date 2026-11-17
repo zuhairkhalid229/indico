@@ -16,6 +16,10 @@ jobs:
           cache-dependency-path: package*.json
       - run: npm ci
       - name: stylelint on the changed files
-        run: npx stylelint --formatter unix indico/web/client/styles/editor-output.scss indico/web/client/styles/modules/event_display/_meetings.scss && echo "stylelint: changed files clean"
+        run: |
+          npx stylelint --formatter unix indico/web/client/styles/editor-output.scss indico/web/client/styles/modules/event_display/_meetings.scss
+          echo "stylelint - changed files clean"
       - name: stylelint on all files (as CI does on push)
-        run: npx stylelint --formatter unix 'indico/**/*.{scss,css}' && echo "stylelint: all files clean"
+        run: |
+          npx stylelint --formatter unix 'indico/**/*.{scss,css}'
+          echo "stylelint - all files clean"
