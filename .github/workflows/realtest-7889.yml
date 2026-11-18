@@ -1,0 +1,116 @@
+name: realtest-7889 (fork only)
+on:
+  push:
+    branches: [ 'ci/realtest-7889' ]
+permissions:
+  contents: read
+jobs:
+  lecture:
+    name: lecture page (${{ matrix.name }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: master
+            ref: 2115d3ce2d08d9dfaef1a34f6a11bef93b7bee4f
+          - name: fix
+            ref: fix/7889-image-aspect-ratio
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Check out the helper scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: helpers
+      - name: Check out Indico (${{ matrix.name }})
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.ref }}
+          path: indico
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.x'
+      - name: Install Indico
+        working-directory: indico
+        run: uv pip install --system -e .
+      - name: Build assets
+        working-directory: indico
+        run: |
+          npm ci
+          python bin/maintenance/build-assets.py indico --dev
+      - name: Redis and database
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server postgresql-client
+          export PGHOST=localhost PGUSER=postgres
+          createuser indico
+          createdb -O indico indico
+          psql indico -c 'CREATE EXTENSION unaccent;'
+          psql indico -c 'CREATE EXTENSION pg_trgm;'
+      - name: Configure Indico
+        run: |
+          mkdir -p /tmp/indico/{etc,cache,tmp,log,archive}
+          cat > /tmp/indico/etc/indico.conf <<'EOF'
+          SQLALCHEMY_DATABASE_URI = 'postgresql://indico@localhost/indico'
+          SECRET_KEY = 'fork-only-test-secret-key-0123456789abcdef'
+          BASE_URL = 'http://127.0.0.1:8000'
+          CELERY_BROKER = 'redis://127.0.0.1:6379/0'
+          REDIS_CACHE_URL = 'redis://127.0.0.1:6379/1'
+          DEFAULT_TIMEZONE = 'Europe/Zurich'
+          DEFAULT_LOCALE = 'en_GB'
+          CACHE_DIR = '/tmp/indico/cache'
+          TEMP_DIR = '/tmp/indico/tmp'
+          LOG_DIR = '/tmp/indico/log'
+          STORAGE_BACKENDS = {'default': 'fs:/tmp/indico/archive'}
+          ATTACHMENT_STORAGE = 'default'
+          NO_REPLY_EMAIL = 'noreply@example.test'
+          SUPPORT_EMAIL = 'support@example.test'
+          SMTP_SERVER = ('localhost', 25)
+          DEBUG = True
+          EOF
+          echo "INDICO_CONFIG=/tmp/indico/etc/indico.conf" >> "$GITHUB_ENV"
+      - name: Prepare database
+        working-directory: indico
+        run: |
+          indico setup create-logging-config /tmp/indico/etc
+          indico db prepare
+      - name: Serve a 2048x1152 image
+        run: |
+          mkdir -p /tmp/img
+          python -c "from PIL import Image, ImageDraw; im = Image.new('RGB', (2048, 1152), (20, 30, 60)); d = ImageDraw.Draw(im); d.ellipse((724, 176, 1324, 976), fill=(230, 230, 210)); im.save('/tmp/img/moon.png')"
+          (cd /tmp/img && python -m http.server 8001 >/tmp/img/server.log 2>&1 &)
+      - name: Create the lecture
+        working-directory: indico
+        run: |
+          python ../helpers/.github/realtest-7889/seed.py http://127.0.0.1:8001/moon.png | tee seed.out
+          grep -o 'EVENT_ID=[0-9]*' seed.out >> "$GITHUB_ENV"
+      - name: Start Indico
+        working-directory: indico
+        run: |
+          (indico run -h 127.0.0.1 -p 8000 -q > /tmp/indico/run.log 2>&1 &)
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:8000/ && break; sleep 2; done
+          curl -s -o /dev/null -w "event page HTTP %{http_code}\n" "http://127.0.0.1:8000/event/${EVENT_ID}/"
+      - name: Open the lecture in Chrome
+        run: |
+          cd helpers && npm init -y >/dev/null && npm i --no-save puppeteer-core@23 >/dev/null
+          node .github/realtest-7889/shot.js "http://127.0.0.1:8000/event/${EVENT_ID}/" "/tmp/lecture-${{ matrix.name }}.png" "${{ matrix.name }}"
+      - name: Logs on failure
+        if: failure()
+        run: tail -60 /tmp/indico/run.log || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: lecture-${{ matrix.name }}
+          path: /tmp/lecture-${{ matrix.name }}.png
+          if-no-files-found: warn
