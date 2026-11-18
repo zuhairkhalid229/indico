@@ -43,7 +43,7 @@ jobs:
           node-version: '22.x'
       - name: Install Indico
         working-directory: indico
-        run: uv pip install --system -e .
+        run: uv pip install --system -e '.[dev]'
       - name: Build assets
         working-directory: indico
         run: |
