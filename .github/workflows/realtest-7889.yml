@@ -88,7 +88,7 @@ jobs:
       - name: Serve a 2048x1152 image
         run: |
           mkdir -p /tmp/img
-          python -c "from PIL import Image, ImageDraw; im = Image.new('RGB', (2048, 1152), (20, 30, 60)); d = ImageDraw.Draw(im); d.ellipse((724, 176, 1324, 976), fill=(230, 230, 210)); im.save('/tmp/img/moon.png')"
+          python -c "from PIL import Image, ImageDraw; im = Image.new('RGB', (2048, 1152), (20, 30, 60)); d = ImageDraw.Draw(im); d.ellipse((624, 176, 1424, 976), fill=(230, 230, 210)); im.save('/tmp/img/moon.png')"
           (cd /tmp/img && python -m http.server 8001 >/tmp/img/server.log 2>&1 &)
       - name: Create the lecture
         working-directory: indico
